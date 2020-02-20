@@ -20,7 +20,7 @@ data "aws_ami" "ubuntu" {
     values = ["hvm"]
   }
 
-  owners = ["099720109477"] # Canonical
+  owners = ["099720109477"]
 }
 
 resource "aws_vpc" "VPC" {
@@ -35,7 +35,7 @@ resource "aws_internet_gateway" "gw" {
   vpc_id = "${aws_vpc.VPC.id}"
 
   tags = {
-    Name = "IG-gateway"
+    Name = "IG-Gateway"
   }
 }
 
@@ -48,7 +48,7 @@ resource "aws_nat_gateway" "gw" {
   subnet_id     = "${aws_subnet.PublicSubnetA.id}"
 
   tags = {
-    Name = "NAT-gw"
+    Name = "NAT-Gw"
   }
 
   depends_on = ["aws_internet_gateway.gw"]
@@ -63,7 +63,7 @@ resource "aws_default_route_table" "main-private-rt" {
   }
 
   tags = {
-    Name = "main-private-rt"
+    Name = "main-private-RT"
   }
 }
 
@@ -76,7 +76,7 @@ resource "aws_route_table" "public-rt" {
   }
 
   tags = {
-    Name = "public-rt"
+    Name = "public-RT"
   }
 }
 
@@ -86,7 +86,7 @@ resource "aws_subnet" "PrivateSubnetA" {
   availability_zone = data.aws_availability_zones.available.names[0]
 
   tags = {
-    Name = "PrivateSubnetA"
+    Name = "Private-Subnet-A"
   }
 }
 
@@ -96,7 +96,7 @@ resource "aws_subnet" "PrivateSubnetB" {
   availability_zone = data.aws_availability_zones.available.names[1]
 
   tags = {
-    Name = "PrivateSubnetB"
+    Name = "Private-Subnet-B"
   }
 }
 resource "aws_subnet" "PrivateSubnetC" {
@@ -105,7 +105,7 @@ resource "aws_subnet" "PrivateSubnetC" {
   availability_zone = data.aws_availability_zones.available.names[2]
 
   tags = {
-    Name = "PrivateSubnetC"
+    Name = "Private-Subnet-C"
   }
 }
 
@@ -116,7 +116,7 @@ resource "aws_subnet" "PublicSubnetA" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "PublicSubnetA"
+    Name = "Public-Subnet-A"
   }
 }
 
@@ -127,7 +127,7 @@ resource "aws_subnet" "PublicSubnetB" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "PublicSubnetB"
+    Name = "Public-Subnet-B"
   }
 }
 
@@ -138,7 +138,7 @@ resource "aws_subnet" "PublicSubnetC" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "PublicSubnetC"
+    Name = "Public-Subnet-C"
   }
 }
 
@@ -173,26 +173,38 @@ resource "aws_route_table_association" "PrivateB" {
 }
 
 resource "aws_security_group" "web_server" {
-  name        = "allow_http"
+  name        = "allow_elb_http"
   description = "Allow HTTP traffic from ELB"
   vpc_id      = "${aws_vpc.VPC.id}"
 
   ingress {
-    from_port = 80
-    to_port   = 80
-    protocol  = "tcp"
-    # Please restrict your ingress to only necessary IPs and ports.
-    # Opening to 0.0.0.0/0 can lead to security vulnerabilities.
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = ["${aws_security_group.elb.id}"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  #Delete after test
+  tags = {
+    Name = "web-server-SG"
+  }
+}
+
+resource "aws_security_group" "elb" {
+  name        = "allow_internet_http"
+  description = "Allow HTTP traffic from anywhere"
+  vpc_id      = "${aws_vpc.VPC.id}"
+
   ingress {
-    from_port = 22
-    to_port   = 22
-    protocol  = "tcp"
-    # Please restrict your ingress to only necessary IPs and ports.
-    # Opening to 0.0.0.0/0 can lead to security vulnerabilities.
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -201,14 +213,17 @@ resource "aws_security_group" "web_server" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    #prefix_list_ids = ["pl-12c4e678"]
+  }
+
+  tags = {
+    Name = "elb-SG"
   }
 }
 
 resource "aws_elb" "elb" {
-  name               = "web-server-elb"
-  #availability_zones = data.aws_availability_zones.available.names
-  subnets = ["${aws_subnet.PublicSubnetA.id}", "${aws_subnet.PublicSubnetB.id}", "${aws_subnet.PublicSubnetC.id}"]
+  name            = "web-server-elb"
+  subnets         = ["${aws_subnet.PublicSubnetA.id}", "${aws_subnet.PublicSubnetB.id}", "${aws_subnet.PublicSubnetC.id}"]
+  security_groups = ["${aws_security_group.elb.id}"]
 
   listener {
     instance_port     = 80
@@ -242,11 +257,11 @@ resource "aws_instance" "WebServer1" {
   subnet_id                   = "${aws_subnet.PrivateSubnetA.id}"
   associate_public_ip_address = false
   user_data                   = "${file("install_apache.sh")}"
-  key_name                    = "EC2KP"
-  security_groups             = ["${aws_security_group.web_server.id}"]
+  #key_name                    = "EC2KP"
+  security_groups = ["${aws_security_group.web_server.id}"]
 
   tags = {
-    Name = "WebServer1"
+    Name = "Web-Server-1"
   }
 
   depends_on = ["aws_nat_gateway.gw"]
@@ -258,11 +273,11 @@ resource "aws_instance" "WebServer2" {
   subnet_id                   = "${aws_subnet.PrivateSubnetB.id}"
   associate_public_ip_address = false
   user_data                   = "${file("install_apache.sh")}"
-  key_name                    = "EC2KP"
-  security_groups             = ["${aws_security_group.web_server.id}"]
+  #key_name                    = "EC2KP"
+  security_groups = ["${aws_security_group.web_server.id}"]
 
   tags = {
-    Name = "WebServer2"
+    Name = "Web-Server-2"
   }
 
   depends_on = ["aws_nat_gateway.gw"]
@@ -274,30 +289,15 @@ resource "aws_instance" "WebServer3" {
   subnet_id                   = "${aws_subnet.PrivateSubnetC.id}"
   associate_public_ip_address = false
   user_data                   = "${file("install_apache.sh")}"
-  key_name                    = "EC2KP"
-  security_groups             = ["${aws_security_group.web_server.id}"]
+  #key_name                    = "EC2KP"
+  security_groups = ["${aws_security_group.web_server.id}"]
 
   tags = {
-    Name = "WebServer3"
+    Name = "Web-Server-3"
   }
 
   depends_on = ["aws_nat_gateway.gw"]
 }
 
 
-resource "aws_instance" "BastionHost" {
-  ami                         = "${data.aws_ami.ubuntu.id}"
-  instance_type               = "t2.micro"
-  subnet_id                   = "${aws_subnet.PublicSubnetA.id}"
-  associate_public_ip_address = true
-  user_data                   = "${file("install_apache.sh")}"
-  key_name                    = "EC2KP"
-  security_groups             = ["${aws_security_group.web_server.id}"]
-
-  tags = {
-    Name = "Bastion-Host"
-  }
-
-  #depends_on = ["aws_nat_gateway.gw"]
-}
 
